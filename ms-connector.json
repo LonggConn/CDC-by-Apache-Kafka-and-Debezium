@@ -1,0 +1,19 @@
+{ 
+    "name": "dbo_CustomerDetails", 
+    "config": { 
+        "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
+        "database.hostname": "DESKTOP-6BJG2TB",
+        "database.port": "1433",
+        "database.user": "sa",
+        "database.password": "1",
+        "database.names": "Customers",
+        "topic.prefix": "DBCustomers",
+        "table.include.list": "dbo.CustomerDetails",
+        "schema.history.internal.kafka.bootstrap.servers": "broker:29092", 
+        "schema.history.internal.kafka.topic": "dbhistory.DBCustomers", 
+        "database.encrypt": true,
+        "database.trustServerCertificate": true,
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "key.converter": "org.apache.kafka.connect.json.JsonConverter"
+    } 
+}
