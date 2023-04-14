@@ -1,0 +1,2 @@
+username	password	hostname	port	database_destination	database_source	prefix
+sa	1	192.168.96.131	1433	DWH	rawdata	DBrawdata
