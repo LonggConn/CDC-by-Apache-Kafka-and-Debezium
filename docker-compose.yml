@@ -11,9 +11,9 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     healthcheck:
         test: ["CMD", "nc", "-vz", "localhost", "2181"]
-        interval: 30s
+        interval: 15s
         timeout: 10s
-        retries: 5
+        retries: 10
 
   broker:
     image: confluentinc/cp-server:7.1.0
@@ -65,9 +65,9 @@ services:
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081  
     healthcheck:
         test: ["CMD", "nc", "-vz", "localhost", "8081"]
-        interval: 30s
+        interval: 15s
         timeout: 10s
-        retries: 5
+        retries: 10
     
   connect:
     image: cnfldemos/cp-server-connect-datagen:0.5.3-7.1.0
@@ -78,7 +78,6 @@ services:
         condition: service_healthy
       schema-registry:
         condition: service_healthy
-
     ports:
       - "8083:8083"
     environment:
@@ -144,9 +143,9 @@ services:
         KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: 'true'
     healthcheck:
         test: ["CMD", "nc", "-vz", "localhost", "8088"]
-        interval: 30s
+        interval: 15s
         timeout: 10s
-        retries: 5
+        retries: 10
 
   control-center:
     image: confluentinc/cp-enterprise-control-center:7.1.0
@@ -174,7 +173,12 @@ services:
       CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
       CONFLUENT_METRICS_TOPIC_REPLICATION: 1
       PORT: 9021
-        
+    healthcheck:
+        test: ["CMD", "nc", "-vz", "localhost", "2181"]
+        interval: 15s
+        timeout: 10s
+        retries: 5
+
   ksqldb-cli:
     image: confluentinc/cp-ksqldb-cli:7.1.0
     container_name: ksqldb-cli
