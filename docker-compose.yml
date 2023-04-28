@@ -68,6 +68,7 @@ services:
     image: cnfldemos/kafka-connect-datagen:0.6.0-7.3.0
     hostname: connect
     container_name: connect
+    user: root
     depends_on:
       broker:
         condition: service_healthy
@@ -96,8 +97,6 @@ services:
       CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
       CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
     command:
-      - apt-get update && apt-get -y install sudo
-      - useradd -m docker && echo "docker:docker" | chpasswd && adduser docker sudo
       - bash 
       - -c 
       - |
