@@ -100,7 +100,12 @@ services:
       - -c 
       - |
         echo "Installing connector plugins"
-        confluent-hub install --no-prompt debezium/debezium-connector-sqlserver:latest
+        # ------ hack to workaround absence of confluent-hub client
+        # mkdir -p /usr/share/confluent-hub-components/
+        # confluent-hub install --no-prompt --component-dir /usr/share/confluent-hub-components/ debezium/debezium-connector-sqlserver:2.1.4
+        curl https://d1i4a15mxbxib1.cloudfront.net/api/plugins/debezium/debezium-connector-sqlserver/versions/2.1.4/debezium-debezium-connector-sqlserver-2.1.4.zip -o /tmp/kafka-connect-mssql.zip
+        yum install -y unzip
+        unzip /tmp/kafka-connect-mssql.zip -d /usr/share/java/
         #
         echo "Launching Kafka Connect worker"
         /etc/confluent/docker/run & 
