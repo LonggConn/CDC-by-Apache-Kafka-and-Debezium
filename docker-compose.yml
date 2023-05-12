@@ -3,6 +3,7 @@ services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.1.0
     hostname: zookeeper
+    user: root
     container_name: zookeeper
     ports:
       - "2181:2181"
@@ -32,6 +33,9 @@ services:
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://10.222.222.95:9092
       KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 5485760
+      KAFKA_PRODUCER_MAX_REQUEST_SIZE: 5485760
+      KAFKA_MESSAGE_MAX_BYTES: 5485760
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
@@ -50,7 +54,7 @@ services:
         interval: 30s
         timeout: 10s
         retries: 5
-        
+
   schema-registry:
     image: confluentinc/cp-schema-registry:7.1.0
     hostname: schema-registry
@@ -63,17 +67,18 @@ services:
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'broker:29092'
-      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081  
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
     healthcheck:
         test: ["CMD", "nc", "-vz", "localhost", "8081"]
-        interval: 15s
+        interval: 20s
         timeout: 10s
         retries: 10
-    
+
   connect:
     image: cnfldemos/cp-server-connect-datagen:0.5.3-7.1.0
     hostname: connect
     container_name: connect
+    user: root
     depends_on:
       broker:
         condition: service_healthy
@@ -92,6 +97,7 @@ services:
       CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_STATUS_STORAGE_TOPIC: docker-connect-status
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_PRODUCER_MAX_REQUEST_SIZE: 5485760
       CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
       CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
       CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
@@ -102,28 +108,32 @@ services:
       CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
       CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
     command:
-      - bash 
-      - -c 
+      - bash
+      - -c
       - |
         echo "Installing connector plugins"
-        confluent-hub install --no-prompt debezium/debezium-connector-sqlserver:latest
+        # ------ hack to workaround absence of confluent-hub client
+        mkdir -p /usr/share/confluent-hub-components/
+        wget --timeout=1 --waitretry=0 --tries=0 https://d1i4a15mxbxib1.cloudfront.net/api/plugins/debezium/debezium-connector-sqlserver/versions/2.1.4/debezium-debezium-connector-sqlserver-2.1.4.zip -P /tmp/
+        yum install -y unzip
+        unzip /tmp/debezium-debezium-connector-sqlserver-2.1.4.zip -d /usr/share/confluent-hub-components/
         #
         echo "Launching Kafka Connect worker"
-        /etc/confluent/docker/run & 
+        /etc/confluent/docker/run &
         #
         sleep infinity
     healthcheck:
         test: ["CMD", "nc", "-vz", "localhost", "8083"]
         interval: 30s
         timeout: 10s
-        retries: 5
+        retries: 20
 
   ksqldb-server:
     image: confluentinc/cp-ksqldb-server:7.1.0
     hostname: ksqldb-server
     container_name: ksqldb-server
     depends_on:
-        broker: 
+        broker:
             condition: service_healthy
         connect:
             condition: service_healthy
