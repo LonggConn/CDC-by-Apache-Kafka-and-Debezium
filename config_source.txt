@@ -1,0 +1,2 @@
+username	password	hostname	port	database	prefix
+sa	Dora@cmis1234567	10.222.227.46	1433	DEV_CMIS	DB_DEV_CMIS
