@@ -76,11 +76,11 @@ def take_table_name(df):
 
 #take topic name
 def take_list_topic_name(list_table_name, prefix, database_source):
-    list_topic_name = []
+    list_topic = []
     for table_name in list_table_name:
         topic_name = f'{prefix}.{database_source}.{table_name}'
-        list_topic_name.append(topic_name)
-    return list_topic_name
+        list_topic.append(topic_name)
+    return list_topic
 
 
 # In[7]:
@@ -193,7 +193,7 @@ def all_table_name(file_dir_table):
 
 #define the topic list
 def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source):
-    list_topic = take_list_topic_name(table_name, prefix, database_source)
+    list_topic = take_list_topic_name([table_name], prefix, database_source)
 
     # Initialize consumer variable
     consumer = KafkaConsumer (list_topic[0], 
@@ -267,9 +267,7 @@ if __name__ == "__main__":
     engine = create_engine(f'mssql+pymssql://{username_destination}:{password_destination}@{hostname_destination}:{port_destination}/{database_destination}') 
     
     list_process = []
-#     part = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
     #Create process
-#     for p in part:
     file_dir_table = f'Table/cdc_table.txt'
     list_table_name = all_table_name(file_dir_table)
     for table_name in list_table_name:
