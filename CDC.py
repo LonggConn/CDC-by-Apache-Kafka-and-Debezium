@@ -105,7 +105,7 @@ def take_time():
 # In[9]:
 
 
-def insert_data(df,table_name):
+def insert_data(df,table_name,date_col, database_source, engine):
     #Take new data
     cdc_table = pd.DataFrame([df.loc[0,'after']]) 
     txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
@@ -128,7 +128,7 @@ def insert_data(df,table_name):
 # In[10]:
 
 
-def update_data(df,table_name):
+def update_data(df,table_name,date_col, database_source, engine):
     cdc_table = pd.DataFrame([df.loc[0,'after']])
     txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
     #string set by loop
@@ -164,7 +164,7 @@ def update_data(df,table_name):
 # In[11]:
 
 
-def delete_data(df,table_name):
+def delete_data(df,table_name, database_source, engine):
     cdc_table = pd.DataFrame([df.loc[0,'before']])
     
     sql = f"DELETE FROM dbo.{table_name} WHERE dbo.{table_name}.ID = {cdc_table.loc[0,'ID']}"
@@ -192,7 +192,11 @@ def all_table_name(file_dir_table):
 
 
 #define the topic list
-def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source):
+def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, date_col, username_destination, password_destination, hostname_destination, port_destination, database_destination):
+    #define the connect engine
+    password_destination = quote_plus(password_destination)
+    engine = create_engine(f'mssql+pymssql://{username_destination}:{password_destination}@{hostname_destination}:{port_destination}/{database_destination}') 
+    
     list_topic = take_list_topic_name([table_name], prefix, database_source)
 
     # Initialize consumer variable
@@ -201,7 +205,7 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source):
                               auto_offset_reset='earliest', 
                               enable_auto_commit=True,
                               auto_commit_interval_ms=5000,
-                              group_id=f'{group_id}_table_{table_name}',
+                              group_id=f'{group_id}_table_{table_name[4:]}',
                               max_partition_fetch_bytes=10485760)
     
     for msg in consumer:
@@ -217,11 +221,11 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source):
             if(df.loc[0,'before'] == None and df.loc[0,'after'] == None):
                 continue
             elif (df.loc[0,'before'] == None):
-                insert_data(df,table_name)
+                insert_data(df,table_name,date_col, database_source, engine)
             elif (df.loc[0,'after'] == None):
-                delete_data(df,table_name)
+                delete_data(df,table_name, database_source, engine)
             else:
-                update_data(df,table_name)
+                update_data(df,table_name,date_col, database_source, engine)
         #Temporary use try except to avoid bug when read null message
         except TypeError:
             time.sleep(0.001) 
@@ -261,17 +265,13 @@ if __name__ == "__main__":
 
     # Define server with port
     bootstrap_servers = [f'{ip_host}:9092',f'{ip_host}:9093',f'{ip_host}:9094']
-
-    #define the connect engine
-    password_destination = quote_plus(password_destination)
-    engine = create_engine(f'mssql+pymssql://{username_destination}:{password_destination}@{hostname_destination}:{port_destination}/{database_destination}') 
     
     list_process = []
     #Create process
     file_dir_table = f'Table/cdc_table.txt'
     list_table_name = all_table_name(file_dir_table)
     for table_name in list_table_name:
-        process = Process(target=Consumer, args=(table_name, bootstrap_servers, group_id, prefix, database_source))
+        process = Process(target=Consumer, args=(table_name, bootstrap_servers, group_id, prefix, database_source, date_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
         list_process.append(process)
     #start project
     for process in list_process:
