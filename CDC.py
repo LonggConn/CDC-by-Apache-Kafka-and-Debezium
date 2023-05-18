@@ -16,6 +16,8 @@ from urllib.parse import quote_plus
 from sqlalchemy.types import NVARCHAR
 from multiprocessing import Pool
 from multiprocessing import Process
+import logging
+import time
 
 
 # In[2]:
@@ -119,10 +121,22 @@ def insert_data(df,table_name,date_col, database_source, engine):
             except Exception as e:
                 cdc_table.loc[0,col] = None
                 cdc_table[col] = pd.to_datetime(cdc_table[col],errors='coerce')
-    cdc_table.to_sql(f'{table_name}', engine, if_exists='append', index = False, dtype = {col_name: NVARCHAR for col_name in txt_cols}) 
-    f = open(f".\CDC_logs\cdc_log_{database_source}.txt", "a")
-    f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tInsert\n")
-    f.close()
+    
+#     with engine.begin() as conn:
+    for i in range(10):  # If load fails due to a deadlock, try 60 more times
+        try:
+            cdc_table.to_sql(f'{table_name}', engine, if_exists='append', index = False, dtype = {col_name: NVARCHAR for col_name in txt_cols}) 
+            f = open(f"CDC_logs\cdc_log_{database_source}_Insert.txt", "a")
+            f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tInsert\n")
+            f.close()
+            return
+        except Exception as ex:
+            if (i == 9):
+                f = open(f"CDC_logs\cdc_log_{database_source}_Error.txt", "a")
+                f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tInsert\n")
+                f.close()
+                return
+            time.sleep(1)
 
 
 # In[10]:
@@ -144,21 +158,50 @@ def update_data(df,table_name,date_col, database_source, engine):
                 cdc_table.loc[0,col] = None
                 cdc_table[col] = pd.to_datetime(cdc_table[col],errors='coerce')
             
-    sql = f"UPDATE dbo.{table_name}\n" + set_str[:-2] + "\nFROM temp t " +f"WHERE dbo.{table_name}.ID = t.ID"
+    sql = f"UPDATE dbo.{table_name}\n" + set_str[:-2] + f"\nFROM temp_{table_name} t " +f"WHERE dbo.{table_name}.ID = t.ID"
     
     #delete temp table after complete
     sql_del_temp = "Drop table temp"
         
-    #create temp table to reduce time to reconize columns type
-    cdc_table.to_sql('temp', engine, if_exists='replace', dtype = {col_name: NVARCHAR for col_name in txt_cols}, index = False)
-
+    for i in range(10):  # If load fails due to a deadlock, try 10 more times
+        try:        
+            #create temp table to reduce time to reconize columns type
+            cdc_table.to_sql(f'temp_{table_name}', engine, if_exists='replace', dtype = {col_name: NVARCHAR for col_name in txt_cols}, index = False)
+        except Exception as ex:
+            if (i == 9):
+                f = open(f"CDC_logs\cdc_log_{database_source}_Error.txt", "a")
+                f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tUpdate\n")
+                f.close()
+                return
+            time.sleep(1)    
+                
     #run sql command
     with engine.begin() as conn:
-        conn.execute(text(sql))
-        conn.execute(text(sql_del_temp))
-        f = open(f".\CDC_logs\cdc_log_{database_source}.txt", "a")
-        f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tUpdate\n")
-        f.close()
+        for i in range(10):  # If load fails due to a deadlock, try 10 more times
+            try:
+                conn.execute(text(sql)) #execute the update
+            except Exception as ex:
+                if (i == 9):
+                    f = open(f"CDC_logs\cdc_log_{database_source}_Error.txt", "a")
+                    f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tUpdate\n")
+                    f.close()
+                    return
+                time.sleep(1)
+                
+        for i in range(10):  # If load fails due to a deadlock, try 10 more times
+            try:            
+                conn.execute(text(sql_del_temp)) #execute the delete
+                f = open(f"CDC_logs\cdc_log_{database_source}_Update.txt", "a")
+                f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tUpdate\n")
+                f.close()
+                return
+            except Exception as ex:
+                if (i == 9):
+                    f = open(f"CDC_logs\cdc_log_{database_source}_Error.txt", "a")
+                    f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tUpdate\n")
+                    f.close()
+                    return
+                time.sleep(1)
 
 
 # In[11]:
@@ -170,10 +213,20 @@ def delete_data(df,table_name, database_source, engine):
     sql = f"DELETE FROM dbo.{table_name} WHERE dbo.{table_name}.ID = {cdc_table.loc[0,'ID']}"
 
     with engine.begin() as conn:
-        conn.execute(text(sql))
-        f = open(f".\CDC_logs\cdc_log_{database_source}.txt", "a", encoding="utf-8")
-        f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tDelete\n")
-        f.close()
+        for i in range(10):  # If load fails due to a deadlock, try 10 more times
+            try:
+                conn.execute(text(sql))
+                f = open(f"CDC_logs\cdc_log_{database_source}_Delete.txt", "a", encoding="utf-8")
+                f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tDelete\n")
+                f.close()
+                return
+            except Exception as ex:
+                if (i == 9):
+                    f = open(f"CDC_logs\cdc_log_{database_source}_Error.txt", "a")
+                    f.write(f"{table_name}\tID\t{cdc_table.loc[0,'ID']}\t{take_time()}\tUpdate\n")
+                    f.close()
+                    return
+                time.sleep(1)
 
 
 # In[12]:
@@ -198,15 +251,17 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
     engine = create_engine(f'mssql+pymssql://{username_destination}:{password_destination}@{hostname_destination}:{port_destination}/{database_destination}') 
     
     list_topic = take_list_topic_name([table_name], prefix, database_source)
-
+    
+    print(f'start consumer for {table_name}')
     # Initialize consumer variable
     consumer = KafkaConsumer (list_topic[0], 
                               bootstrap_servers = bootstrap_servers,
                               auto_offset_reset='earliest', 
                               enable_auto_commit=True,
-                              auto_commit_interval_ms=5000,
+                              auto_commit_interval_ms=10000,
                               group_id=f'{group_id}_table_{table_name[4:]}',
-                              max_partition_fetch_bytes=10485760)
+                              max_partition_fetch_bytes=10485760,
+                              max_poll_records=100)
     
     for msg in consumer:
         try:
@@ -228,7 +283,7 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
                 update_data(df,table_name,date_col, database_source, engine)
         #Temporary use try except to avoid bug when read null message
         except TypeError:
-            time.sleep(0.001) 
+            time.sleep(0.001)
 
 
 # In[14]:
@@ -256,7 +311,7 @@ if __name__ == "__main__":
     date_col = take_dt_col_name_from_file(file_dir_dt_col)
     
     #create log
-    for action in ['Insert','Update','Delete']:
+    for action in ['Insert','Update','Delete','Error']:
         file_dir_log = f'CDC_logs/cdc_log_{database_source}_{action}.txt'
         if (os.path.isfile(file_dir_log)) == False:
             f = open(f"{file_dir_log}", "a", encoding="utf-8")
