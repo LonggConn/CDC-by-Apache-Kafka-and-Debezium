@@ -19,6 +19,7 @@ from multiprocessing import Process
 import logging
 import time
 from sqlalchemy.engine import URL
+import gc
 
 
 # In[2]:
@@ -111,6 +112,7 @@ def take_time():
 def insert_data(json,table_name,date_col, decimal_col, database_source, engine, is_pk):
     #Take new data
     cdc_table = pd.DataFrame(json) 
+    gc.collect()
     txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
     temp_dec = set(decimal_col)
     nvarchar_col = [x for x in txt_cols if x not in temp_dec]
@@ -150,7 +152,10 @@ def insert_data(json,table_name,date_col, decimal_col, database_source, engine, 
                 f.close()
                 return
             time.sleep(0.1)
-            
+    
+    del cdc_table
+    gc.collect()
+        
     if not is_pk:
         try:
             with engine.begin() as conn:
@@ -165,6 +170,7 @@ def insert_data(json,table_name,date_col, decimal_col, database_source, engine, 
 
 def update_data(json,table_name,date_col, decimal_col, database_source, engine):
     cdc_table = pd.DataFrame(json) 
+    gc.collect()
     txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
     temp_dec = set(decimal_col)
     nvarchar_col = [x for x in txt_cols if x not in temp_dec]
@@ -207,8 +213,11 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
                     f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tUpdate\n")
                 f.close()
                 return
-            time.sleep(0.1)   
-                
+            time.sleep(0.1)
+            
+    del cdc_table
+    gc.collect()
+    
     #run sql command
     with engine.begin() as conn:
 #         for i in range(600):  # If load fails due to a deadlock, try 600 more times
@@ -350,7 +359,7 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             else:
                 list_msg_update.append(after_json)
             
-            if current_offset >= end_offset:
+            if (current_offset >= end_offset or current_offset%10000 == 0):
                 if list_msg_insert:
                     insert_data(list_msg_insert,table_name_add,date_col, decimal_col, database_source, engine, is_pk)
                     list_msg_insert = []
@@ -378,12 +387,10 @@ if __name__ == "__main__":
     file_dir_config_destination = 'Config/config_destination.txt'
     
     #take config source
-    username_source, password_source, hostname_source, port_source, database_source, prefix \
-    = take_config_from_file(file_dir_config_source).split('\t')
+    username_source, password_source, hostname_source, port_source, database_source, prefix     = take_config_from_file(file_dir_config_source).split('\t')
     
     #take config destination
-    username_destination, password_destination, hostname_destination, port_destination, database_destination \
-    = take_config_from_file(file_dir_config_destination).split('\t')
+    username_destination, password_destination, hostname_destination, port_destination, database_destination     = take_config_from_file(file_dir_config_destination).split('\t')
     
     #take config host and group id
     ip_host, group_id = take_config_from_file(file_dir_ip_and_group).split('\t')
