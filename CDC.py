@@ -5,8 +5,10 @@
 
 
 #import library
+import os
 from kafka import KafkaConsumer
 from kafka import TopicPartition
+from kafka.structs import OffsetAndMetadata
 import json
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -20,6 +22,8 @@ import logging
 import time
 from sqlalchemy.engine import URL
 import gc
+import random
+from sqlalchemy import text
 
 
 # In[2]:
@@ -105,6 +109,13 @@ def take_time():
     dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
     return dt_string
 
+def round_robin_sublists(l, n=4):
+    lists = [[] for _ in range(n)]
+    i = 0
+    for elem in l:
+        lists[i].append(elem)
+        i = (i + 1) % n
+    return lists
 
 # In[9]:
 
@@ -112,7 +123,6 @@ def take_time():
 def insert_data(json,table_name,date_col, decimal_col, database_source, engine, is_pk):
     #Take new data
     cdc_table = pd.DataFrame(json) 
-    gc.collect()
     txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
     temp_dec = set(decimal_col)
     nvarchar_col = [x for x in txt_cols if x not in temp_dec]
@@ -125,13 +135,13 @@ def insert_data(json,table_name,date_col, decimal_col, database_source, engine, 
                     dt_obj = datetime.utcfromtimestamp(epoch_time/1000)
                     cdc_table.loc[i, col] = dt_obj
                 except Exception as e:
-                    cdc_table.loc[i,col] = None
+                    cdc_table.loc[i,col] = ''
             cdc_table[col] = pd.to_datetime(cdc_table[col],errors='coerce')
-    
+
     nvarchar = {col_name: NVARCHAR for col_name in nvarchar_col}
     decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
-    change_dtype = {**nvarchar, **decimal}
-    
+    change_dtype = {**decimal, **nvarchar}
+
     for i in range(600):  # If load fails due to a deadlock, try 600 more times
         try:
             cdc_table.to_sql(f'{table_name}', 
@@ -143,7 +153,7 @@ def insert_data(json,table_name,date_col, decimal_col, database_source, engine, 
             for i in cdc_table.index:
                 f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tInsert\n")
             f.close()
-            return
+            break
         except Exception as ex:
             if (i == 599):
                 f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Error.txt", "a")
@@ -152,32 +162,27 @@ def insert_data(json,table_name,date_col, decimal_col, database_source, engine, 
                 f.close()
                 return
             time.sleep(0.1)
-    
-    del cdc_table
-    gc.collect()
-        
+
     if not is_pk:
         try:
-            with engine.begin() as conn:
-                conn.execute(f'ALTER TABLE {table_name} ADD PRIMARY KEY ("ID");')
+            engine.execute(text(f'ALTER TABLE {table_name} ALTER COLUMN ID bigint NOT NULL;'))
+            engine.execute(text(f'ALTER TABLE {table_name} ADD PRIMARY KEY ("ID");'))
             is_pk = True
         except Exception as e:
             is_pk = True
-
 
 # In[10]:
 
 
 def update_data(json,table_name,date_col, decimal_col, database_source, engine):
     cdc_table = pd.DataFrame(json) 
-    gc.collect()
     txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
     temp_dec = set(decimal_col)
     nvarchar_col = [x for x in txt_cols if x not in temp_dec]
     #string set by loop
     set_str = "SET"
     for col in cdc_table.columns:
-        set_str = set_str + f" {col} = td.{col},\n" #SQL command
+        set_str = set_str + f" [{col}] = td.[{col}],\n" #SQL command
         if(col in date_col):
             for i in cdc_table.index:
                 try:
@@ -185,7 +190,7 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
                     dt_obj = datetime.utcfromtimestamp(epoch_time/1000)
                     cdc_table.loc[i, col] = dt_obj
                 except Exception as e:
-                    cdc_table.loc[i,col] = None
+                    cdc_table.loc[i,col] = ''
             cdc_table[col] = pd.to_datetime(cdc_table[col],errors='coerce')
             
     sql = f"UPDATE dbo.{table_name}\n" + set_str[:-2] + f"\nFROM temp_{table_name}_update td " +f"WHERE dbo.{table_name}.ID = td.ID"
@@ -194,35 +199,24 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
     sql_del_temp = f"Drop table temp_{table_name}_update"
     
     #create temp table to update
-    
+
     nvarchar = {col_name: NVARCHAR for col_name in nvarchar_col}
     decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
     change_dtype = {**nvarchar, **decimal}
     
-    for i in range(600):  # If load fails due to a deadlock, try 600 more times
-        try:
-            cdc_table.to_sql(f'temp_{table_name}_update', 
-                             engine, 
-                             if_exists='replace', 
-                             index = False, 
-                             dtype = change_dtype)
-        except Exception as ex:
-            if (i == 599):
-                f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Error.txt", "a")
-                for i in cdc_table.index:
-                    f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tUpdate\n")
-                f.close()
-                return
-            time.sleep(0.1)
-            
-    del cdc_table
-    gc.collect()
-    
+
+    cdc_table.to_sql(f'temp_{table_name}_update', 
+                        engine, 
+                        if_exists='replace', 
+                        index = False, 
+                        dtype = change_dtype)
+
+              
     #run sql command
-    with engine.begin() as conn:
+    #with engine.begin() as conn:
 #         for i in range(600):  # If load fails due to a deadlock, try 600 more times
 #             try:
-        conn.execute(text(sql)) #execute the update
+    engine.execute(text(sql)) #execute the update
 #             except Exception as ex:
 #                 if (i == 599):
 #                     f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Error.txt", "a")
@@ -234,11 +228,11 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
                 
 #         for i in range(600):  # If load fails due to a deadlock, try 600 more times
 #             try:            
-        conn.execute(text(sql_del_temp)) #execute the delete
-        f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Update.txt", "a")
-        for i in cdc_table.index:
-            f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tUpdate\n")
-        f.close()
+    engine.execute(text(sql_del_temp)) #execute the delete
+    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Update.txt", "a")
+    for i in cdc_table.index:
+        f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tUpdate\n")
+    f.close()
 #                 return
 #             except Exception as ex:
 #                 if (i == 599):
@@ -259,14 +253,14 @@ def delete_data(json,table_name,date_col, decimal_col, database_source, engine):
     index_tuple = tuple(index)
     sql = f"DELETE FROM dbo.{table_name} WHERE dbo.{table_name}.ID in {index_tuple}"
 
-    with engine.begin() as conn:
+    #with engine.begin() as conn:
 #         for i in range(600):  # If load fails due to a deadlock, try 600 more times
 #             try:
-        conn.execute(text(sql))
-        f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Delete.txt", "a", encoding="utf-8")
-        for i in cdc_table.index:
-            f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tDelete\n")
-        f.close()
+    engine.execute(text(sql))
+    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Delete.txt", "a", encoding="utf-8")
+    for i in cdc_table.index:
+        f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tDelete\n")
+    f.close()
 #                 return
 #             except Exception as ex:
 #                 if (i == 599):
@@ -307,7 +301,7 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             "driver": "ODBC Driver 17 for SQL Server"
         },
     )
-    engine = create_engine(connection_url, isolation_level="READ_UNCOMMITTED", fast_executemany=True).connect()
+    engine = create_engine(connection_url, fast_executemany=True).connect()
     
     list_topic = take_list_topic_name([table_name], prefix, database_source)
     
@@ -316,8 +310,7 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
     consumer = KafkaConsumer (list_topic[0], 
                               bootstrap_servers = bootstrap_servers,
                               auto_offset_reset='earliest', 
-                              enable_auto_commit=True,
-                              auto_commit_interval_ms=10000,
+                              enable_auto_commit=False,
                               group_id=f'{group_id}_table_{table_name[4:]}',
                               max_partition_fetch_bytes=10485760)
     
@@ -325,10 +318,10 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
     list_msg_delete = []
     list_msg_update = []
     is_pk = False
-    
+
     for msg in consumer:
         try:
-            #take current and end offset
+        #take current and end offset
             partitions = [TopicPartition(list_topic[0], p) for p in consumer.partitions_for_topic(list_topic[0])]
             last_offset_per_partition = consumer.end_offsets(partitions)
             end_offset = list(last_offset_per_partition.values())[0]
@@ -345,8 +338,8 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             after_json = decode_json.get('after')
             
             #take table name
-#             df = pd.DataFrame()
-#             table_name = take_table_name(df)
+    #             df = pd.DataFrame()
+    #             table_name = take_table_name(df)
             table_name_add = table_name[4:]
     
             #Check action
@@ -357,21 +350,25 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             elif (after_json == None):
                 list_msg_delete.append(before_json)
             else:
-                list_msg_update.append(after_json)
-            
-            if (current_offset >= end_offset or current_offset%10000 == 0):
+                list_msg_update.append(after_json)    
+
+            meta = consumer.partitions_for_topic(list_topic[0])
+            options = {}
+            options[TopicPartition(topic=list_topic[0], partition=0)] = OffsetAndMetadata(msg.offset + 1, meta)
+            consumer.commit(options)
+            if (current_offset >= end_offset or current_offset%50000 == 25000):
                 if list_msg_insert:
                     insert_data(list_msg_insert,table_name_add,date_col, decimal_col, database_source, engine, is_pk)
-                    list_msg_insert = []
                 if list_msg_delete:
                     delete_data(list_msg_delete,table_name_add,date_col, decimal_col, database_source, engine)
-                    list_msg_delete = []
                 if list_msg_update:
                     update_data(list_msg_update,table_name_add,date_col, decimal_col, database_source, engine)
-                    list_msg_update = []
-              
+
+            if (current_offset >= end_offset or current_offset%50000 == 25000):
+                break
         #Temporary use try except to avoid bug when read null message
         except TypeError:
+            print('Some error happen')
             time.sleep(0.001)
 
 
@@ -397,7 +394,6 @@ if __name__ == "__main__":
     
     #take columns datetime
     date_col = take_dt_col_name_from_file(file_dir_dt_col)
-    
     #take object columns
     decimal_col = take_dt_col_name_from_file(file_dir_dc_col)
     # Define server with port
@@ -408,7 +404,6 @@ if __name__ == "__main__":
     list_table_name = all_table_name(file_dir_table)
     list_process = {}
     id_process = 0
-    
         
     #create log
     for table_name in list_table_name:
@@ -420,34 +415,30 @@ if __name__ == "__main__":
                 f.close()
 
     #start process
+
+    #while(1):
     for table_name in list_table_name:
         process = Process(target=Consumer, args=(table_name, bootstrap_servers, group_id, prefix, database_source, date_col, decimal_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
         process.start()
         list_process[id_process] = (process,table_name) #Save the process with it's name
         id_process += 1
+        #while(1):
+            #if not process.is_alive():
+                #print("Prepare next consumer")
+                #process.join()
+                #break
     
     #Restart dead process
     while len(list_process) > 0:
         for n in list_process.keys():
             (p, t) = list_process[n]
-            time.sleep(0.5)
-            if  p.exitcode is None and not p.is_alive(): # Not finished and not running
-                print(t, ' is gone as if never born!')
-                process = Process(target=Consumer, args=(t, bootstrap_servers, group_id, prefix, database_source, date_col, decimal_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
-                process.start()
-                list_process[n] = (process,t)
-            elif p.exitcode is None: #process running
-                continue
-            elif p.exitcode < 0 or not p.is_alive():
+            time.sleep(0.1)
+            if not p.is_alive():
                 print ('Process Ended with an error or a terminate ', t)
+                p.join() # Allow tidyup
                 process = Process(target=Consumer, args=(t, bootstrap_servers, group_id, prefix, database_source, date_col, decimal_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
                 process.start()
                 list_process[n] = (process,t)
-            else:
-                print (t, ' finished')
-                p.join() # Allow tidyup
-                del processes[n] # Removed finished items from the dictionary 
-                # When none are left then loop will end
                 
     print('Finish')
 
