@@ -1,5 +1,5 @@
 { 
-    "name": "CMIS_to_DWH_70_tables_No_1", 
+    "name": "CMIS_to_DWH_70_tables", 
     "config": { 
         "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
         "database.hostname": "10.222.227.46",
@@ -8,13 +8,14 @@
         "database.password": "Dora@cmis1234567",
         "database.names": "DEV_CMIS",
         "topic.prefix": "DB_DEV_CMIS",
-        "table.include.list": "dbo.AccountGroup",
-        "schema.history.internal.kafka.bootstrap.servers": "broker:29092", 
+        "table.include.list": "dbo.AccountGroups, dbo.AssignmentDetails, dbo.Assignments, dbo.BODetails, dbo.BOKinds, dbo.BOPeriodDetails, dbo.BOPeriods, dbo.Branches, dbo.BudgetStandards, dbo.BusinessOpportunities, dbo.BusinessPlans, dbo.ChangeRequests, dbo.ConsultantDetails, dbo.Consultants, dbo.ContractDetails, dbo.ContractLockStatus, dbo.Contracts, dbo.ContractTypes, dbo.CostForGuarantees, dbo.CostForMoneys, dbo.CostMandayBlockPrices, dbo.Customers, dbo.CustomerTypes, dbo.DecisionDetails, dbo.EmployeeTypePrices, dbo.EmployeeTypes, dbo.EmployeeTypeVersions, dbo.EnvironmentTypes, dbo.EstimateContracts, dbo.EstimateGuarantees, dbo.Estimates, dbo.FinalizationContracts, dbo.FinalizationCostForMoneys, dbo.FinalizationCostMandayBlockPrices, dbo.FinalizationEstimates, dbo.GroupHistories, dbo.Groups, dbo.GroupTitles, dbo.IndustryTypes, dbo.KPIEmployeeTypes, dbo.Opportunities, dbo.OpportunityStatus, dbo.OrderDetails, dbo.Orders, dbo.OrderWarranties, dbo.ProductConsultantDetails, dbo.ProfitTranferDetails, dbo.ProfitTranfers, dbo.ProjectDecisions, dbo.QuotationProducts, dbo.Quotations, dbo.RequestExecutives, dbo.RequirementImports, dbo.ReviewContracts, dbo.Roles, dbo.TimeSheets, dbo.Titles, dbo.TrackCollections, dbo.TrackingInvoices, dbo.UserCustomers, dbo.UserGroups, dbo.UserRoleGroups, dbo.UserRoles, dbo.Users, dbo.WarehouseInputDetails, dbo.WarehouseOutputDetails, dbo.WarehouseRequireOuputDetails, dbo.WFDefinitionInstants, dbo.WFDefinitions",
+        "schema.history.internal.kafka.bootstrap.servers": "broker_1:29092,broker_2:29093,broker_3:29094", 
         "schema.history.internal.kafka.topic": "dbhistory.DEV_CMIS", 
         "database.encrypt": true,
         "database.trustServerCertificate": true,
         "value.converter": "org.apache.kafka.connect.json.JsonConverter",
         "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "decimal.handling.mode": "double",
         "max.request.size":"10485760"
     } 
 }
