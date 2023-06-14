@@ -207,35 +207,15 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
 
               
     #run sql command
-    #with engine.begin() as conn:
-#         for i in range(600):  # If load fails due to a deadlock, try 600 more times
-#             try:
+
     engine.execute(text(sql)) #execute the update
-#             except Exception as ex:
-#                 if (i == 599):
-#                     f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Error.txt", "a")
-#                     for i in cdc_table.index:
-#                         f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tUpdate\n")
-#                     f.close()
-#                     return
-#                 time.sleep(0.1)
-                
-#         for i in range(600):  # If load fails due to a deadlock, try 600 more times
-#             try:            
+      
     engine.execute(text(sql_del_temp)) #execute the delete
     f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Update.txt", "a")
     for i in cdc_table.index:
         f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tUpdate\n")
     f.close()
-#                 return
-#             except Exception as ex:
-#                 if (i == 599):
-#                     f = open(f"CDC_logs\cdc_log_{database_source}_Error.txt", "a")
-#                     for i in cdc_table.index:
-#                         f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tUpdate\n")
-#                     f.close()
-#                     return
-#                 time.sleep(0.1)
+
 
 
 # In[11]:
@@ -247,23 +227,13 @@ def delete_data(json,table_name,date_col, decimal_col, database_source, engine):
     index_tuple = tuple(index)
     sql = f"DELETE FROM dbo.{table_name} WHERE dbo.{table_name}.ID in {index_tuple}"
 
-    #with engine.begin() as conn:
-#         for i in range(600):  # If load fails due to a deadlock, try 600 more times
-#             try:
+
     engine.execute(text(sql))
     f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Delete.txt", "a", encoding="utf-8")
     for i in cdc_table.index:
         f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tDelete\n")
     f.close()
-#                 return
-#             except Exception as ex:
-#                 if (i == 599):
-#                     f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Error.txt", "a")
-#                     for i in cdc_table.index:
-#                         f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tDelete\n")
-#                     f.close()
-#                     return
-#                 time.sleep(0.1)
+
 
 
 # In[12]:
