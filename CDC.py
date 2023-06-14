@@ -204,6 +204,8 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
     decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
     change_dtype = {**nvarchar, **decimal}
     
+    sql_create_temp = f"SELECT TOP 0 * INTO [temp_{table_name}_update] FROM [{table_name}]"
+    engine.execute(text(sql_create_temp))
 
     cdc_table.to_sql(f'temp_{table_name}_update', 
                         engine, 
