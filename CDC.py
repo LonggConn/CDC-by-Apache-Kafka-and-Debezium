@@ -163,14 +163,6 @@ def insert_data(json,table_name,date_col, decimal_col, database_source, engine, 
                 return
             time.sleep(0.1)
 
-    if not is_pk:
-        try:
-            engine.execute(text(f'ALTER TABLE {table_name} ALTER COLUMN ID bigint NOT NULL;'))
-            engine.execute(text(f'ALTER TABLE {table_name} ADD PRIMARY KEY ("ID");'))
-            is_pk = True
-        except Exception as e:
-            is_pk = True
-
 # In[10]:
 
 
