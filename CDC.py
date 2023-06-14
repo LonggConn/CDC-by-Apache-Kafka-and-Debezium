@@ -209,7 +209,7 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
 
     cdc_table.to_sql(f'temp_{table_name}_update', 
                         engine, 
-                        if_exists='replace', 
+                        if_exists='append', 
                         index = False, 
                         dtype = change_dtype)
 
