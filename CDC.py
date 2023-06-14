@@ -139,8 +139,8 @@ def insert_data(json,table_name,date_col, decimal_col, database_source, engine, 
             cdc_table[col] = pd.to_datetime(cdc_table[col],errors='coerce')
 
     nvarchar = {col_name: NVARCHAR for col_name in nvarchar_col}
-    decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
-    change_dtype = {**decimal, **nvarchar}
+    #decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
+    change_dtype = {**nvarchar}
 
     for i in range(600):  # If load fails due to a deadlock, try 600 more times
         try:
@@ -201,8 +201,8 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
     #create temp table to update
 
     nvarchar = {col_name: NVARCHAR for col_name in nvarchar_col}
-    decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
-    change_dtype = {**nvarchar, **decimal}
+    #decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
+    change_dtype = {**nvarchar}
     
     sql_create_temp = f"SELECT TOP 0 * INTO [temp_{table_name}_update] FROM [{table_name}]"
     engine.execute(text(sql_create_temp))
