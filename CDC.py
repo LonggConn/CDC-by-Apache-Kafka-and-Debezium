@@ -120,12 +120,12 @@ def round_robin_sublists(l, n=4):
 # In[9]:
 
 
-def insert_data(json,table_name,date_col, decimal_col, database_source, engine, is_pk):
+def insert_data(json,table_name,date_col, database_source, engine, is_pk):
     #Take new data
     cdc_table = pd.DataFrame(json) 
-    txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
-    temp_dec = set(decimal_col)
-    nvarchar_col = [x for x in txt_cols if x not in temp_dec]
+    #txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
+    #temp_dec = set(decimal_col)
+    #nvarchar_col = [x for x in txt_cols if x not in temp_dec]
     #Change nano epoch time to datetime
     for col in cdc_table.columns:
         if(col in date_col):
@@ -138,17 +138,17 @@ def insert_data(json,table_name,date_col, decimal_col, database_source, engine, 
                     cdc_table.loc[i,col] = ''
             cdc_table[col] = pd.to_datetime(cdc_table[col],errors='coerce')
 
-    nvarchar = {col_name: NVARCHAR for col_name in nvarchar_col}
+    #nvarchar = {col_name: NVARCHAR for col_name in nvarchar_col}
     #decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
-    change_dtype = {**nvarchar}
+    #change_dtype = {**nvarchar}
 
     for i in range(600):  # If load fails due to a deadlock, try 600 more times
         try:
             cdc_table.to_sql(f'{table_name}', 
                              engine, 
                              if_exists='append', 
-                             index = False, 
-                             dtype = change_dtype)
+                             index = False) 
+                             #dtype = change_dtype)
             f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Insert.txt", "a")
             for i in cdc_table.index:
                 f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tInsert\n")
@@ -166,11 +166,11 @@ def insert_data(json,table_name,date_col, decimal_col, database_source, engine, 
 # In[10]:
 
 
-def update_data(json,table_name,date_col, decimal_col, database_source, engine):
+def update_data(json,table_name,date_col, database_source, engine):
     cdc_table = pd.DataFrame(json) 
-    txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
-    temp_dec = set(decimal_col)
-    nvarchar_col = [x for x in txt_cols if x not in temp_dec]
+    #txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
+    #temp_dec = set(decimal_col)
+    #nvarchar_col = [x for x in txt_cols if x not in temp_dec]
     #string set by loop
     set_str = "SET"
     for col in cdc_table.columns:
@@ -192,9 +192,9 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
     
     #create temp table to update
 
-    nvarchar = {col_name: NVARCHAR for col_name in nvarchar_col}
+    #nvarchar = {col_name: NVARCHAR for col_name in nvarchar_col}
     #decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
-    change_dtype = {**nvarchar}
+    #change_dtype = {**nvarchar}
     
     sql_create_temp = f"SELECT TOP 0 * INTO [temp_{table_name}_update] FROM [{table_name}]"
     engine.execute(text(sql_create_temp))
@@ -202,8 +202,8 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
     cdc_table.to_sql(f'temp_{table_name}_update', 
                         engine, 
                         if_exists='append', 
-                        index = False, 
-                        dtype = change_dtype)
+                        index = False) 
+                        #dtype = change_dtype)
 
               
     #run sql command
@@ -221,7 +221,7 @@ def update_data(json,table_name,date_col, decimal_col, database_source, engine):
 # In[11]:
 
 
-def delete_data(json,table_name,date_col, decimal_col, database_source, engine):
+def delete_data(json,table_name,date_col, database_source, engine):
     cdc_table = pd.DataFrame(json)
     index = cdc_table['ID']
     index_tuple = tuple(index)
@@ -252,7 +252,7 @@ def all_table_name(file_dir_table):
 
 
 #define the topic list
-def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, date_col, decimal_col, username_destination, password_destination, hostname_destination, port_destination, database_destination):
+def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, date_col, username_destination, password_destination, hostname_destination, port_destination, database_destination):
     #define the connect engine
     connection_url = URL.create(
         "mssql+pyodbc",
@@ -322,11 +322,11 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             consumer.commit(options)
             if (current_offset >= end_offset or current_offset%50000 == 25000):
                 if list_msg_insert:
-                    insert_data(list_msg_insert,table_name_add,date_col, decimal_col, database_source, engine, is_pk)
+                    insert_data(list_msg_insert,table_name_add,date_col, database_source, engine, is_pk)
                 if list_msg_delete:
-                    delete_data(list_msg_delete,table_name_add,date_col, decimal_col, database_source, engine)
+                    delete_data(list_msg_delete,table_name_add,date_col, database_source, engine)
                 if list_msg_update:
-                    update_data(list_msg_update,table_name_add,date_col, decimal_col, database_source, engine)
+                    update_data(list_msg_update,table_name_add,date_col, database_source, engine)
 
             if (current_offset >= end_offset or current_offset%50000 == 25000):
                 break
@@ -343,7 +343,7 @@ if __name__ == "__main__":
     #file directory
     file_dir_ip_and_group = 'Config/config_ip_and_group_id.txt'
     file_dir_dt_col = 'Table/dt_col.txt'
-    file_dir_dc_col = 'Table/dc_col.txt'
+    #file_dir_dc_col = 'Table/dc_col.txt'
     file_dir_config_source = 'Config/config_source.txt'
     file_dir_config_destination = 'Config/config_destination.txt'
     
@@ -359,7 +359,7 @@ if __name__ == "__main__":
     #take columns datetime
     date_col = take_dt_col_name_from_file(file_dir_dt_col)
     #take object columns
-    decimal_col = take_dt_col_name_from_file(file_dir_dc_col)
+    #decimal_col = take_dt_col_name_from_file(file_dir_dc_col)
     # Define server with port
     bootstrap_servers = [f'{ip_host}:9092',f'{ip_host}:9093',f'{ip_host}:9094']
     
@@ -382,7 +382,7 @@ if __name__ == "__main__":
 
     #while(1):
     for table_name in list_table_name:
-        process = Process(target=Consumer, args=(table_name, bootstrap_servers, group_id, prefix, database_source, date_col, decimal_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
+        process = Process(target=Consumer, args=(table_name, bootstrap_servers, group_id, prefix, database_source, date_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
         process.start()
         list_process[id_process] = (process,table_name) #Save the process with it's name
         id_process += 1
@@ -400,7 +400,7 @@ if __name__ == "__main__":
             if not p.is_alive():
                 print ('Process Ended with an error or a terminate ', t)
                 p.join() # Allow tidyup
-                process = Process(target=Consumer, args=(t, bootstrap_servers, group_id, prefix, database_source, date_col, decimal_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
+                process = Process(target=Consumer, args=(t, bootstrap_servers, group_id, prefix, database_source, date_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
                 process.start()
                 list_process[n] = (process,t)
                 
