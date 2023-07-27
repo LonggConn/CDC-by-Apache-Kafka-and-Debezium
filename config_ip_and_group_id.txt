@@ -1,0 +1,2 @@
+ip_host	group_id
+10.222.222.217	FAST_to_DWH
