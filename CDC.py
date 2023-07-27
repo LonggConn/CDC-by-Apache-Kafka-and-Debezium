@@ -5,7 +5,6 @@
 
 
 #import library
-import os
 from kafka import KafkaConsumer
 from kafka import TopicPartition
 from kafka.structs import OffsetAndMetadata
