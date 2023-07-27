@@ -21,7 +21,7 @@ from multiprocessing import Process
 import logging
 import time
 from sqlalchemy.engine import URL
-import gc
+#import gc
 from sqlalchemy import text
 
 
