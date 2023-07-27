@@ -22,7 +22,6 @@ import logging
 import time
 from sqlalchemy.engine import URL
 import gc
-import random
 from sqlalchemy import text
 
 
