@@ -118,7 +118,7 @@ def round_robin_sublists(l, n=4):
 # In[9]:
 
 
-def insert_data(json,table_name,date_col, database_source, engine, is_pk):
+def insert_data(json,table_name,date_col, database_source, engine):
     #Take new data
     cdc_table = pd.DataFrame(json) 
     #txt_cols = cdc_table.select_dtypes(include = ['object']).columns.values.tolist()
@@ -330,9 +330,9 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             options = {}
             options[TopicPartition(topic=list_topic[0], partition=0)] = OffsetAndMetadata(msg.offset + 1, meta)
             consumer.commit(options)
-            if (current_offset >= end_offset or current_offset%50000 == 25000):
+            if (current_offset >= end_offset or current_offset%50000 == 25000 or is_pk == True):
                 if list_msg_insert:
-                    insert_data(list_msg_insert,table_name_add,date_col, database_source, engine, is_pk)
+                    insert_data(list_msg_insert,table_name_add,date_col, database_source, engine)
                     with open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Insert.txt",'w') as file:
                         pass
                 if list_msg_delete:
@@ -344,12 +344,12 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
                     with open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Update.txt",'w') as file:
                         pass
 
-            if (current_offset >= end_offset or current_offset%50000 == 25000):
+            if (current_offset >= end_offset or current_offset%50000 == 25000 or is_pk == True):
                 break
         #Temporary use try except to avoid bug when read null message
-        except TypeError:
-            print('Some error happen')
-            time.sleep(0.001)
+        except:
+            is_pk = True
+            time.sleep(1)
 
 
 # In[14]:
