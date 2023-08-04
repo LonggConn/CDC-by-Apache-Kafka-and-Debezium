@@ -309,10 +309,22 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
                 continue
             elif (before_json == None):
                 list_msg_insert.append(after_json)
+                f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Insert.txt", "a", encoding="utf-8")
+                for i in cdc_table.index:
+                    f.write(f"{after_json}")
+                f.close()
             elif (after_json == None):
                 list_msg_delete.append(before_json)
+                f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Delete.txt", "a", encoding="utf-8")
+                for i in cdc_table.index:
+                    f.write(f"{after_json}")
+                f.close()
             else:
-                list_msg_update.append(after_json)    
+                list_msg_update.append(after_json)
+                f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Update.txt", "a", encoding="utf-8")
+                for i in cdc_table.index:
+                    f.write(f"{after_json}")
+                f.close()
 
             meta = consumer.partitions_for_topic(list_topic[0])
             options = {}
@@ -321,10 +333,16 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             if (current_offset >= end_offset or current_offset%50000 == 25000):
                 if list_msg_insert:
                     insert_data(list_msg_insert,table_name_add,date_col, database_source, engine, is_pk)
+                    with open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Insert.txt",'w') as file:
+                        pass
                 if list_msg_delete:
                     delete_data(list_msg_delete,table_name_add,date_col, database_source, engine)
+                    with open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Delete.txt",'w') as file:
+                        pass
                 if list_msg_update:
                     update_data(list_msg_update,table_name_add,date_col, database_source, engine)
+                    with open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Update.txt",'w') as file:
+                        pass
 
             if (current_offset >= end_offset or current_offset%50000 == 25000):
                 break
@@ -369,7 +387,7 @@ if __name__ == "__main__":
         
     #create log
     for table_name in list_table_name:
-        for action in ['Insert','Update','Delete','Error']:
+        for action in ['Insert','Update','Delete','Error','Backup_Insert','Backup_Update','Backup_Delete']:
             file_dir_log = f'CDC_logs/cdc_log_{database_source}_{table_name[4:]}_{action}.txt'
             if (os.path.isfile(file_dir_log)) == False:
                 f = open(f"{file_dir_log}", "a", encoding="utf-8")
