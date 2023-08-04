@@ -397,7 +397,10 @@ if __name__ == "__main__":
             time.sleep(0.1)
             if not p.is_alive():
                 print ('Process Ended with an error or a terminate ', t)
-                p.join() # Allow tidyup
+                p.terminate()
+                #p.kill()
+                #p.join() # Allow tidyup
+                p.close()
                 process = Process(target=Consumer, args=(t, bootstrap_servers, group_id, prefix, database_source, date_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
                 process.start()
                 list_process[n] = (process,t)
