@@ -432,7 +432,7 @@ if __name__ == "__main__":
         for n in list_process.keys():
             (p, t) = list_process[n]
             time.sleep(0.1)
-            if p.exitcode is not None or not p.is_alive:
+            if p.exitcode is not None or not p.is_alive():
                 #print ('Process Ended with an error or a terminate ', t)
                 #p.terminate()
                 p.kill()
