@@ -133,33 +133,33 @@ def insert_data(json,table_name,date_col, database_source, engine):
                     dt_obj = datetime.utcfromtimestamp(epoch_time/1000)
                     cdc_table.loc[i, col] = dt_obj
                 except Exception as e:
-                    cdc_table.loc[i,col] = ''
+                    cdc_table.loc[i,col] = None
             cdc_table[col] = pd.to_datetime(cdc_table[col],errors='coerce')
 
     #nvarchar = {col_name: NVARCHAR for col_name in nvarchar_col}
     #decimal = {decimal_name: DECIMAL for decimal_name in decimal_col}
     #change_dtype = {**nvarchar}
 
-    for i in range(600):  # If load fails due to a deadlock, try 600 more times
-        try:
-            cdc_table.to_sql(f'{table_name}', 
-                             engine, 
-                             if_exists='append', 
-                             index = False) 
-                             #dtype = change_dtype)
-            f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Insert.txt", "a")
-            for i in cdc_table.index:
-                f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tInsert\n")
-            f.close()
-            break
-        except Exception as ex:
-            if (i == 599):
-                f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Error.txt", "a")
-                for i in cdc_table.index:
-                    f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tInsert\n")
-                f.close()
-                return
-            time.sleep(0.1)
+    #for i in range(600):  # If load fails due to a deadlock, try 600 more times
+        #try:
+    cdc_table.to_sql(f'{table_name}', 
+                        engine, 
+                        if_exists='append',
+                        schema='dbo',
+                        index = False) 
+                        #dtype = change_dtype)
+    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Insert.txt", "a")
+    for i in cdc_table.index:
+        f.write(f"{table_name}\t{cdc_table.loc[i,'stt_rec']}_{cdc_table.loc[i,'line_nbr']}\t{take_time()}\tInsert\n")
+    f.close()
+        #except Exception as ex:
+            #if (i == 599):
+                #f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Error.txt", "a")
+                #for i in cdc_table.index:
+                    #f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tInsert\n")
+                #f.close()
+                #return
+            #time.sleep(0.1)
 
 # In[10]:
 
@@ -183,7 +183,7 @@ def update_data(json,table_name,date_col, database_source, engine):
                     cdc_table.loc[i,col] = ''
             cdc_table[col] = pd.to_datetime(cdc_table[col],errors='coerce')
             
-    sql = f"UPDATE dbo.{table_name}\n" + set_str[:-2] + f"\nFROM temp_{table_name}_update td " +f"WHERE dbo.{table_name}.ID = td.ID"
+    sql = f"UPDATE dbo.{table_name}\n" + set_str[:-2] + f"\nFROM temp_{table_name}_update td " +f"WHERE dbo.{table_name}.stt_rec = td.stt_rec and dbo.{table_name}.line_nbr = td.line_nbr"
     
     #delete temp table after complete
     sql_del_temp = f"Drop table temp_{table_name}_update"
@@ -211,7 +211,7 @@ def update_data(json,table_name,date_col, database_source, engine):
     engine.execute(text(sql_del_temp)) #execute the delete
     f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Update.txt", "a")
     for i in cdc_table.index:
-        f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tUpdate\n")
+        f.write(f"{table_name}\t{cdc_table.loc[i,'stt_rec']}_{cdc_table.loc[i,'line_nbr']}\t{take_time()}\tUpdate\n")
     f.close()
 
 
@@ -221,15 +221,16 @@ def update_data(json,table_name,date_col, database_source, engine):
 
 def delete_data(json,table_name,date_col, database_source, engine):
     cdc_table = pd.DataFrame(json)
-    index = cdc_table['ID']
-    index_tuple = tuple(index)
-    sql = f"DELETE FROM dbo.{table_name} WHERE dbo.{table_name}.ID in {index_tuple}"
+    index = cdc_table['stt_rec']
+    index2 = cdc_table['line_nbr']
+    for i in range(len(index)):
+        sql = f"DELETE FROM dbo.{table_name} WHERE stt_rec = '{index[i]}' and line_nbr = {index2[i]}"
 
 
     engine.execute(text(sql))
     f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Delete.txt", "a", encoding="utf-8")
     for i in cdc_table.index:
-        f.write(f"{table_name}\tID\t{cdc_table.loc[i,'ID']}\t{take_time()}\tDelete\n")
+        f.write(f"{table_name}\t{cdc_table.loc[i,'stt_rec']}_{cdc_table.loc[i,'line_nbr']}\t{take_time()}\tDelete\n")
     f.close()
 
 
@@ -280,77 +281,95 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
     list_msg_delete = []
     list_msg_update = []
     is_pk = False
+    firstOffsetCheck = False
 
     for msg in consumer:
         try:
-        #take current and end offset
+            #take current and end offset
             partitions = [TopicPartition(list_topic[0], p) for p in consumer.partitions_for_topic(list_topic[0])]
-            last_offset_per_partition = consumer.end_offsets(partitions)
-            end_offset = list(last_offset_per_partition.values())[0]
             current_offset = consumer.position(TopicPartition(topic=list_topic[0], partition=0))
-            
-            #Read data from comsumer
-            data = json.loads(msg.value)
-            
-            #take change data
-            decode_json = data.get('payload')
-            
-            #take before and after
-            before_json = decode_json.get('before')
-            after_json = decode_json.get('after')
-            
-            #take table name
-    #             df = pd.DataFrame()
-    #             table_name = take_table_name(df)
-            table_name_add = table_name[4:]
-    
-            #Check action
-            if(before_json == None and after_json == None):
-                continue
-            elif (before_json == None):
-                list_msg_insert.append(after_json)
-                f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Insert.txt", "a", encoding="utf-8")
-                for i in cdc_table.index:
-                    f.write(f"{after_json}")
-                f.close()
-            elif (after_json == None):
-                list_msg_delete.append(before_json)
-                f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Delete.txt", "a", encoding="utf-8")
-                for i in cdc_table.index:
-                    f.write(f"{after_json}")
-                f.close()
-            else:
-                list_msg_update.append(after_json)
-                f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Update.txt", "a", encoding="utf-8")
-                for i in cdc_table.index:
-                    f.write(f"{after_json}")
-                f.close()
-
+		
             meta = consumer.partitions_for_topic(list_topic[0])
             options = {}
             options[TopicPartition(topic=list_topic[0], partition=0)] = OffsetAndMetadata(msg.offset + 1, meta)
             consumer.commit(options)
-            if (current_offset >= end_offset or current_offset%50000 == 25000 or is_pk == True):
-                if list_msg_insert:
-                    insert_data(list_msg_insert,table_name_add,date_col, database_source, engine)
-                    with open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Insert.txt",'w') as file:
-                        pass
-                if list_msg_delete:
-                    delete_data(list_msg_delete,table_name_add,date_col, database_source, engine)
-                    with open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Delete.txt",'w') as file:
-                        pass
-                if list_msg_update:
-                    update_data(list_msg_update,table_name_add,date_col, database_source, engine)
-                    with open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Backup_Update.txt",'w') as file:
-                        pass
 
-            if (current_offset >= end_offset or current_offset%50000 == 25000 or is_pk == True):
-                break
+
+            #Read data from comsumer
+            data = json.loads(msg.value)
+		
+            #take change data
+            decode_json = data.get('payload')
+		
+            #take before and after
+            before_json = decode_json.get('before')
+            after_json = decode_json.get('after')
+		
+            #take table name
+            #             df = pd.DataFrame()
+            #             table_name = take_table_name(df)
+            table_name_add = table_name[4:]
+
+            #Log offset
+            f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
+            f.write(f"{take_time()}: {current_offset}\n")
+            f.close()
+
+            #Check action
+            if(before_json == None and after_json == None):
+	            continue
+            elif (before_json == None):
+	            list_msg_insert.append(after_json)
+            elif (after_json == None):
+	            list_msg_delete.append(before_json)
+            else:
+	            list_msg_update.append(after_json)    
+
+            #Take end offset
+            if firstOffsetCheck == False:
+	            time.sleep(5)
+	            firstOffsetCheck = True
+            partitions_2 = [TopicPartition(list_topic[0], p) for p in consumer.partitions_for_topic(list_topic[0])]
+            last_offset_per_partition = consumer.end_offsets(partitions_2)
+            end_offset = list(last_offset_per_partition.values())[0]
+
+            if (current_offset >= end_offset or current_offset%50000 == 25000):
+	            if list_msg_delete:
+		            delete_data(list_msg_delete,table_name_add,date_col, database_source, engine)
+		            list_msg_delete = []
+		            time.sleep(1)
+	            if list_msg_insert:
+		            insert_data(list_msg_insert,table_name_add,date_col, database_source, engine)
+		            list_msg_insert = []
+		            time.sleep(1)
+	            if list_msg_update:
+		            update_data(list_msg_update,table_name_add,date_col, database_source, engine)
+		            list_msg_update = []
+		            time.sleep(1)
+
+            if (current_offset >= end_offset or current_offset%50000 == 25000):
+	            return 0
         #Temporary use try except to avoid bug when read null message
         except:
             is_pk = True
             time.sleep(1)
+            break
 
+    if(is_pk == True):
+        if list_msg_delete:
+	        delete_data(list_msg_delete,table_name_add,date_col, database_source, engine)
+	        list_msg_delete = []
+	        time.sleep(1)
+        if list_msg_insert:
+	        insert_data(list_msg_insert,table_name_add,date_col, database_source, engine)
+	        list_msg_insert = []
+	        time.sleep(1)
+        if list_msg_update:
+	        update_data(list_msg_update,table_name_add,date_col, database_source, engine)
+	        list_msg_update = []
+	        time.sleep(1)
+
+    return 0
 
 # In[14]:
 
@@ -387,7 +406,7 @@ if __name__ == "__main__":
         
     #create log
     for table_name in list_table_name:
-        for action in ['Insert','Update','Delete','Error','Backup_Insert','Backup_Update','Backup_Delete']:
+        for action in ['Insert','Update','Delete','Error','Offset']:
             file_dir_log = f'CDC_logs/cdc_log_{database_source}_{table_name[4:]}_{action}.txt'
             if (os.path.isfile(file_dir_log)) == False:
                 f = open(f"{file_dir_log}", "a", encoding="utf-8")
@@ -395,7 +414,7 @@ if __name__ == "__main__":
                 f.close()
 
     #start process
-
+                
     #while(1):
     for table_name in list_table_name:
         process = Process(target=Consumer, args=(table_name, bootstrap_servers, group_id, prefix, database_source, date_col, username_destination, password_destination, hostname_destination, port_destination, database_destination))
@@ -413,8 +432,8 @@ if __name__ == "__main__":
         for n in list_process.keys():
             (p, t) = list_process[n]
             time.sleep(0.1)
-            if not p.is_alive():
-                print ('Process Ended with an error or a terminate ', t)
+            if p.exitcode is not None or not p.is_alive:
+                #print ('Process Ended with an error or a terminate ', t)
                 #p.terminate()
                 p.kill()
                 #p.join() # Allow tidyup
