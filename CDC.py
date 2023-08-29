@@ -313,19 +313,19 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
 	            continue
             elif (before_json == None):
 	            list_msg_insert.append(after_json)
-                    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
-                    f.write(f"{take_time()}: {current_offset}\tInsert")
-                    f.close()
+		    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
+		    f.write(f"{take_time()}: {current_offset}\tInsert")
+		    f.close()
             elif (after_json == None):
 	            list_msg_delete.append(before_json)
-                    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
-                    f.write(f"{take_time()}: {current_offset}\tDelete")
-                    f.close()
+		    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
+		    f.write(f"{take_time()}: {current_offset}\tDelete")
+		    f.close()
             else:
-	            list_msg_update.append(after_json)  
-                    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
-                    f.write(f"{take_time()}: {current_offset}\tUpdate")
-                    f.close()
+	            list_msg_update.append(after_json)
+		    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
+		    f.write(f"{take_time()}: {current_offset}\tUpdate")
+		    f.close()
 
             #Take end offset
             if firstOffsetCheck == False:
