@@ -183,7 +183,7 @@ def update_data(json,table_name,date_col, database_source, engine):
                     cdc_table.loc[i,col] = ''
             cdc_table[col] = pd.to_datetime(cdc_table[col],errors='coerce')
             
-    sql = f"UPDATE dbo.{table_name}\n" + set_str[:-2] + f"\nFROM temp_{table_name}_update td " +f"WHERE dbo.{table_name}.stt_rec = td.stt_rec and dbo.{table_name}.line_nbr = td.line_nbr"
+    sql = f"UPDATE {table_name}\n" + set_str[:-2] + f"\nFROM temp_{table_name}_update td " +f"WHERE dbo.{table_name}.stt_rec = td.stt_rec and dbo.{table_name}.line_nbr = td.line_nbr"
     
     #delete temp table after complete
     sql_del_temp = f"Drop table temp_{table_name}_update"
@@ -207,7 +207,7 @@ def update_data(json,table_name,date_col, database_source, engine):
     #run sql command
 
     engine.execute(text(sql)) #execute the update
-      
+    time.sleep(5)  
     engine.execute(text(sql_del_temp)) #execute the delete
     f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Update.txt", "a")
     for i in cdc_table.index:
@@ -224,15 +224,13 @@ def delete_data(json,table_name,date_col, database_source, engine):
     index = cdc_table['stt_rec']
     index2 = cdc_table['line_nbr']
     for i in range(len(index)):
-        sql = f"DELETE FROM dbo.{table_name} WHERE stt_rec = '{index[i]}' and line_nbr = {index2[i]}"
-
-
-    engine.execute(text(sql))
-    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Delete.txt", "a", encoding="utf-8")
-    for i in cdc_table.index:
+        sql = f"BEGIN TRANSACTION;\nDECLARE @rowCount INT;\nDELETE FROM {table_name}\nWHERE stt_rec = '{index[i]}' AND line_nbr = {index2[i]};\nSET @rowCount = @@ROWCOUNT;\nIF @rowCount > 0\nCOMMIT TRANSACTION;\nELSE\nROLLBACK TRANSACTION;"
+        engine.execute(text(sql))
+        time.sleep(5)
+        f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Delete.txt", "a", encoding="utf-8")
+        #for i in cdc_table.index:
         f.write(f"{table_name}\t{cdc_table.loc[i,'stt_rec']}_{cdc_table.loc[i,'line_nbr']}\t{take_time()}\tDelete\n")
-    f.close()
-
+        f.close()
 
 
 # In[12]:
@@ -280,7 +278,7 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
     list_msg_insert = []
     list_msg_delete = []
     list_msg_update = []
-    is_pk = False
+    is_empty = False
     firstOffsetCheck = False
 
     for msg in consumer:
@@ -310,25 +308,30 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             #             table_name = take_table_name(df)
             table_name_add = table_name[4:]
 
-            #Log offset
-            f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
-            f.write(f"{take_time()}: {current_offset}\n")
-            f.close()
-
             #Check action
             if(before_json == None and after_json == None):
 	            continue
             elif (before_json == None):
 	            list_msg_insert.append(after_json)
+                    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
+                    f.write(f"{take_time()}: {current_offset}\tInsert")
+                    f.close()
             elif (after_json == None):
 	            list_msg_delete.append(before_json)
+                    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
+                    f.write(f"{take_time()}: {current_offset}\tDelete")
+                    f.close()
             else:
-	            list_msg_update.append(after_json)    
+	            list_msg_update.append(after_json)  
+                    f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
+                    f.write(f"{take_time()}: {current_offset}\tUpdate")
+                    f.close()
 
             #Take end offset
             if firstOffsetCheck == False:
 	            time.sleep(5)
 	            firstOffsetCheck = True
+	            
             partitions_2 = [TopicPartition(list_topic[0], p) for p in consumer.partitions_for_topic(list_topic[0])]
             last_offset_per_partition = consumer.end_offsets(partitions_2)
             end_offset = list(last_offset_per_partition.values())[0]
@@ -337,37 +340,31 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
 	            if list_msg_delete:
 		            delete_data(list_msg_delete,table_name_add,date_col, database_source, engine)
 		            list_msg_delete = []
-		            time.sleep(1)
 	            if list_msg_insert:
 		            insert_data(list_msg_insert,table_name_add,date_col, database_source, engine)
 		            list_msg_insert = []
-		            time.sleep(1)
 	            if list_msg_update:
 		            update_data(list_msg_update,table_name_add,date_col, database_source, engine)
 		            list_msg_update = []
-		            time.sleep(1)
 
             if (current_offset >= end_offset or current_offset%50000 == 25000):
 	            return 0
         #Temporary use try except to avoid bug when read null message
         except:
-            is_pk = True
-            time.sleep(1)
+            is_empty = True
             break
 
-    if(is_pk == True):
+    table_name_add = table_name[4:]
+    if(is_empty == True):
         if list_msg_delete:
 	        delete_data(list_msg_delete,table_name_add,date_col, database_source, engine)
 	        list_msg_delete = []
-	        time.sleep(1)
         if list_msg_insert:
 	        insert_data(list_msg_insert,table_name_add,date_col, database_source, engine)
 	        list_msg_insert = []
-	        time.sleep(1)
         if list_msg_update:
 	        update_data(list_msg_update,table_name_add,date_col, database_source, engine)
 	        list_msg_update = []
-	        time.sleep(1)
 
     return 0
 
