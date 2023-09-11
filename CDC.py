@@ -161,11 +161,11 @@ def insert_data(json,table_name,date_col, database_source, engine):
                 #return
             #time.sleep(0.1)
 		
-	sql = "If(OBJECT_ID('tempdb..#Temp_Dup') Is Not Null) Begin Drop Table #Temp_Dup End" 	
-	sql1 = "SELECT c.* into #Temp_Dup FROM ct00 c INNER JOIN (SELECT stt_rec, line_nbr, MAX(datetime2) AS datetime2, COUNT(*) AS num FROM ct00 c GROUP BY stt_rec, line_nbr HAVING COUNT(*) >= 2) a ON c.stt_rec = a.stt_rec AND c.line_nbr = a.line_nbr AND c.datetime2 = a.datetime2"
-	with engine.begin() as conn:
-		conn.execute(text(sql))
-		conn.execute(text(sql1))
+    sql = "If(OBJECT_ID('tempdb..#Temp_Dup') Is Not Null) Begin Drop Table #Temp_Dup End" 	
+    sql1 = "SELECT c.* into #Temp_Dup FROM ct00 c INNER JOIN (SELECT stt_rec, line_nbr, MAX(datetime2) AS datetime2, COUNT(*) AS num FROM ct00 c GROUP BY stt_rec, line_nbr HAVING COUNT(*) >= 2) a ON c.stt_rec = a.stt_rec AND c.line_nbr = a.line_nbr AND c.datetime2 = a.datetime2"
+    with engine.begin() as conn:
+        conn.execute(text(sql))
+        conn.execute(text(sql1))
 # In[10]:
 
 
@@ -354,20 +354,20 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
                 end_offset = list(last_offset_per_partition.values())[0]
 
             if (current_offset >= end_offset or current_offset%50000 == 25000):
-                if list_msg_delete:
-                    delete_data(list_msg_delete, table_name_add, date_col, database_source, engine2)
-                    list_msg_delete = []
                 if list_msg_insert:
                     insert_data(list_msg_insert, table_name_add, date_col, database_source, engine)
                     list_msg_insert = []
+                if list_msg_delete:
+                    delete_data(list_msg_delete, table_name_add, date_col, database_source, engine2)
+                    list_msg_delete = []
                 if list_msg_update:
                     update_data(list_msg_update, table_name_add, date_col, database_source, engine3)
                     list_msg_update = []
 
 
             if (current_offset >= end_offset or current_offset%50000 == 25000):
-		resolve_duplicate(engine)
-	        return 0
+                resolve_duplicate(engine)
+                return 0
         #Temporary use try except to avoid bug when read null message
         except:
             time.sleep(0.01)
