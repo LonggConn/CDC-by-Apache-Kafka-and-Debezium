@@ -160,7 +160,12 @@ def insert_data(json,table_name,date_col, database_source, engine):
                 #f.close()
                 #return
             #time.sleep(0.1)
-
+		
+	sql = "If(OBJECT_ID('tempdb..#Temp_Dup') Is Not Null) Begin Drop Table #Temp_Dup End" 	
+	sql1 = "SELECT c.* into #Temp_Dup FROM ct00 c INNER JOIN (SELECT stt_rec, line_nbr, MAX(datetime2) AS datetime2, COUNT(*) AS num FROM ct00 c GROUP BY stt_rec, line_nbr HAVING COUNT(*) >= 2) a ON c.stt_rec = a.stt_rec AND c.line_nbr = a.line_nbr AND c.datetime2 = a.datetime2"
+	with engine.begin() as conn:
+		conn.execute(text(sql))
+		conn.execute(text(sql1))
 # In[10]:
 
 
@@ -195,20 +200,20 @@ def update_data(json,table_name,date_col, database_source, engine):
     #change_dtype = {**nvarchar}
     
     sql_create_temp = f"SELECT TOP 0 * INTO [temp_{table_name}_update] FROM [{table_name}]"
-    engine.execute(text(sql_create_temp))
+    with engine.begin() as conn:
+        conn.execute(text(sql_create_temp))
 
     cdc_table.to_sql(f'temp_{table_name}_update', 
-                        engine, 
+                        engine.connect(), 
                         if_exists='append', 
                         index = False) 
                         #dtype = change_dtype)
 
               
     #run sql command
-
-    engine.execute(text(sql)) #execute the update
-    time.sleep(5)  
-    engine.execute(text(sql_del_temp)) #execute the delete
+    with engine.begin() as conn:
+        conn.execute(text(sql)) #execute the update
+        conn.execute(text(sql_del_temp)) #execute the delete
     f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Update.txt", "a")
     for i in cdc_table.index:
         f.write(f"{table_name}\t{cdc_table.loc[i,'stt_rec']}_{cdc_table.loc[i,'line_nbr']}\t{take_time()}\tUpdate\n")
@@ -224,9 +229,9 @@ def delete_data(json,table_name,date_col, database_source, engine):
     index = cdc_table['stt_rec']
     index2 = cdc_table['line_nbr']
     for i in range(len(index)):
-        sql = f"BEGIN TRANSACTION;\nDECLARE @rowCount INT;\nDELETE FROM {table_name}\nWHERE stt_rec = '{index[i]}' AND line_nbr = {index2[i]};\nSET @rowCount = @@ROWCOUNT;\nIF @rowCount > 0\nCOMMIT TRANSACTION;\nELSE\nROLLBACK TRANSACTION;"
-        engine.execute(text(sql))
-        time.sleep(5)
+        sql = f"DELETE FROM {table_name} WHERE stt_rec = '{index[i]}' AND line_nbr = {index2[i]}"
+        with engine.begin() as conn:
+            conn.execute(text(sql))
         f = open(f"CDC_logs\cdc_log_{database_source}_{table_name}_Delete.txt", "a", encoding="utf-8")
         #for i in cdc_table.index:
         f.write(f"{table_name}\t{cdc_table.loc[i,'stt_rec']}_{cdc_table.loc[i,'line_nbr']}\t{take_time()}\tDelete\n")
@@ -244,8 +249,16 @@ def all_table_name(file_dir_table):
         list_table_name = []
     return list_table_name
 
-
 # In[13]:
+
+
+def resolve_duplicate(engine):
+	sql2 = "delete c from ct00 c inner join #Temp_Dup t on t.stt_rec = c.stt_rec and t.line_nbr = c.line_nbr"
+	sql3 = "insert into ct00 select * from #Temp_Dup"
+	with engine.begin() as conn:
+		conn.execute(text(sql3))
+
+# In[14]:
 
 
 #define the topic list
@@ -262,11 +275,15 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             "driver": "ODBC Driver 17 for SQL Server"
         },
     )
+
     engine = create_engine(connection_url, fast_executemany=True).connect()
+    engine2 = create_engine(connection_url, fast_executemany=True)
+    engine3 = create_engine(connection_url, fast_executemany=True)
+
     
     list_topic = take_list_topic_name([table_name], prefix, database_source)
     
-    print(f'start consumer for {table_name}')
+    #print(f'start consumer for {table_name}')
     # Initialize consumer variable
     consumer = KafkaConsumer (list_topic[0], 
                               bootstrap_servers = bootstrap_servers,
@@ -274,7 +291,7 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
                               enable_auto_commit=False,
                               group_id=f'{group_id}_table_{table_name[4:]}',
                               max_partition_fetch_bytes=10485760)
-    
+   
     list_msg_insert = []
     list_msg_delete = []
     list_msg_update = []
@@ -314,58 +331,47 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
             elif before_json is None:
                 list_msg_insert.append(after_json)
                 f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
-                f.write(f"{take_time()}: {current_offset}\tInsert")
+                f.write(f"{take_time()}: {current_offset}\tInsert\n")
                 f.close()
             elif after_json is None:
                 list_msg_delete.append(before_json)
                 f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
-                f.write(f"{take_time()}: {current_offset}\tDelete")
+                f.write(f"{take_time()}: {current_offset}\tDelete\n")
                 f.close()
             else:
                 list_msg_update.append(after_json)
                 f = open(f"CDC_logs\cdc_log_{database_source}_{table_name_add}_Offset.txt", "a", encoding="utf-8")
-                f.write(f"{take_time()}: {current_offset}\tUpdate")
+                f.write(f"{take_time()}: {current_offset}\tUpdate\n")
                 f.close()
 
 
             #Take end offset
             if firstOffsetCheck == False:
-	            time.sleep(5)
-	            firstOffsetCheck = True
-	            
-            partitions_2 = [TopicPartition(list_topic[0], p) for p in consumer.partitions_for_topic(list_topic[0])]
-            last_offset_per_partition = consumer.end_offsets(partitions_2)
-            end_offset = list(last_offset_per_partition.values())[0]
+                firstOffsetCheck = True
+                time.sleep(1)
+                partitions_2 = [TopicPartition(list_topic[0], p) for p in consumer.partitions_for_topic(list_topic[0])]
+                last_offset_per_partition = consumer.end_offsets(partitions_2)
+                end_offset = list(last_offset_per_partition.values())[0]
 
             if (current_offset >= end_offset or current_offset%50000 == 25000):
-	            if list_msg_delete:
-		            delete_data(list_msg_delete,table_name_add,date_col, database_source, engine)
-		            list_msg_delete = []
-	            if list_msg_insert:
-		            insert_data(list_msg_insert,table_name_add,date_col, database_source, engine)
-		            list_msg_insert = []
-	            if list_msg_update:
-		            update_data(list_msg_update,table_name_add,date_col, database_source, engine)
-		            list_msg_update = []
+                if list_msg_delete:
+                    delete_data(list_msg_delete, table_name_add, date_col, database_source, engine2)
+                    list_msg_delete = []
+                if list_msg_insert:
+                    insert_data(list_msg_insert, table_name_add, date_col, database_source, engine)
+                    list_msg_insert = []
+                if list_msg_update:
+                    update_data(list_msg_update, table_name_add, date_col, database_source, engine3)
+                    list_msg_update = []
+
 
             if (current_offset >= end_offset or current_offset%50000 == 25000):
-	            return 0
+		resolve_duplicate(engine)
+	        return 0
         #Temporary use try except to avoid bug when read null message
         except:
-            is_empty = True
-            break
+            time.sleep(0.01)
 
-    table_name_add = table_name[4:]
-    if(is_empty == True):
-        if list_msg_delete:
-	        delete_data(list_msg_delete,table_name_add,date_col, database_source, engine)
-	        list_msg_delete = []
-        if list_msg_insert:
-	        insert_data(list_msg_insert,table_name_add,date_col, database_source, engine)
-	        list_msg_insert = []
-        if list_msg_update:
-	        update_data(list_msg_update,table_name_add,date_col, database_source, engine)
-	        list_msg_update = []
 
     return 0
 
@@ -429,7 +435,6 @@ if __name__ == "__main__":
     while len(list_process) > 0:
         for n in list_process.keys():
             (p, t) = list_process[n]
-            time.sleep(0.1)
             if p.exitcode is not None or not p.is_alive():
                 #print ('Process Ended with an error or a terminate ', t)
                 #p.terminate()
