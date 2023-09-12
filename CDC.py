@@ -143,7 +143,7 @@ def insert_data(json,table_name,date_col, database_source, engine):
     #for i in range(600):  # If load fails due to a deadlock, try 600 more times
         #try:
     cdc_table.to_sql(f'{table_name}', 
-                        engine, 
+                        engine.connect(), 
                         if_exists='append',
                         schema='dbo',
                         index = False) 
@@ -256,6 +256,7 @@ def resolve_duplicate(engine):
 	sql2 = "delete c from ct00 c inner join #Temp_Dup t on t.stt_rec = c.stt_rec and t.line_nbr = c.line_nbr"
 	sql3 = "insert into ct00 select * from #Temp_Dup"
 	with engine.begin() as conn:
+		conn.execute(text(sql2))
 		conn.execute(text(sql3))
 
 # In[14]:
@@ -276,7 +277,7 @@ def Consumer(table_name, bootstrap_servers, group_id, prefix, database_source, d
         },
     )
 
-    engine = create_engine(connection_url, fast_executemany=True).connect()
+    engine = create_engine(connection_url, fast_executemany=True)
     engine2 = create_engine(connection_url, fast_executemany=True)
     engine3 = create_engine(connection_url, fast_executemany=True)
 
